@@ -5,12 +5,7 @@ import { Event } from '@eventcatalog/types';
 import merge from 'deepmerge';
 import buildMarkdownFile from './markdown-builder';
 
-import {
-  FunctionInitInterface,
-  GetEventFromCatalogOptions,
-  WriteEventToCatalogOptions,
-  WriteEventToCatalogResponse,
-} from './types';
+import { FunctionInitInterface, WriteEventToCatalogOptions, WriteEventToCatalogResponse } from './types';
 
 import { existsInCatalog } from './index';
 
@@ -31,17 +26,13 @@ const readMarkdownFile = (pathToFile: string) => {
 
 export const getEventFromCatalog =
   ({ catalogDirectory }: FunctionInitInterface) =>
-  (eventName: string, options?: GetEventFromCatalogOptions) => {
-    const { version } = options || {};
-
-    if (!existsInCatalog({ catalogDirectory })(eventName, { type: 'event', version })) {
+  (eventName: string) => {
+    if (!existsInCatalog({ catalogDirectory })(eventName, { type: 'event' })) {
       return null;
     }
 
     // Read the directory to get the stuff we need.
-    const { parsed: parsedEvent, raw } = readMarkdownFile(
-      path.join(catalogDirectory, 'events', eventName, version ? path.join('versioned', version) : '', 'index.md')
-    );
+    const { parsed: parsedEvent, raw } = readMarkdownFile(path.join(catalogDirectory, 'events', eventName, 'index.md'));
 
     return {
       data: parseEventFrontMatterIntoEvent(parsedEvent.data),
@@ -120,13 +111,12 @@ export const versionEvent =
 export const writeEventToCatalog =
   ({ catalogDirectory }: FunctionInitInterface) =>
   (event: Event, options?: WriteEventToCatalogOptions): WriteEventToCatalogResponse => {
-    const { name: eventName, version } = event;
+    const { name: eventName } = event;
     const {
       useMarkdownContentFromExistingEvent = true,
       renderMermaidDiagram = true,
       renderNodeGraph = false,
       versionExistingEvent = true,
-      isLatestVersion = true,
       schema,
       codeExamples = [],
       markdownContent: setMarkdownContent,
@@ -136,16 +126,11 @@ export const writeEventToCatalog =
 
     if (!eventName) throw new Error('No `name` found for given event');
 
-    if (!isLatestVersion && !version) throw new Error('No `version` found for given event');
-
-    const eventAlreadyInCatalog = existsInCatalog({ catalogDirectory })(eventName, {
-      type: 'event',
-      version: !isLatestVersion ? version : undefined,
-    });
+    const eventAlreadyInCatalog = existsInCatalog({ catalogDirectory })(eventName, { type: 'event' });
 
     if (!markdownContent && useMarkdownContentFromExistingEvent && eventAlreadyInCatalog) {
       try {
-        const data = getEventFromCatalog({ catalogDirectory })(eventName, { version: !isLatestVersion ? version : undefined });
+        const data = getEventFromCatalog({ catalogDirectory })(eventName);
         markdownContent = data?.content ? data?.content : '';
       } catch (error) {
         // TODO: do nothing
@@ -157,9 +142,7 @@ export const writeEventToCatalog =
 
     // Check if we should carry frontmatter from previous event into the new one.
     if (eventAlreadyInCatalog && frontMatterToCopyToNewVersions) {
-      const eventFromCatalog = getEventFromCatalog({ catalogDirectory })(eventName, {
-        version: !isLatestVersion ? version : undefined,
-      });
+      const eventFromCatalog = getEventFromCatalog({ catalogDirectory })(eventName);
       defaultFrontMatterForNewEvent = Object.keys(frontMatterToCopyToNewVersions).reduce(
         (defaultValues: any, key: string) =>
           // @ts-ignore
@@ -168,13 +151,11 @@ export const writeEventToCatalog =
       );
     }
 
-    if (eventAlreadyInCatalog && versionExistingEvent && isLatestVersion) {
+    if (eventAlreadyInCatalog && versionExistingEvent) {
       versionEvent({ catalogDirectory })(eventName);
     }
 
-    const eventPath = path.join(catalogDirectory, 'events', eventName, !isLatestVersion ? path.join('versioned', version) : '');
-
-    fs.ensureDirSync(eventPath);
+    fs.ensureDirSync(path.join(catalogDirectory, 'events', eventName));
     const data = buildEventMarkdownForCatalog()(event, {
       markdownContent,
       renderMermaidDiagram,
@@ -183,20 +164,23 @@ export const writeEventToCatalog =
       defaultFrontMatter: defaultFrontMatterForNewEvent,
     });
 
-    fs.writeFileSync(path.join(eventPath, 'index.md'), data);
+    fs.writeFileSync(path.join(catalogDirectory, 'events', eventName, 'index.md'), data);
 
     if (schema && schema.extension && schema.fileContent) {
-      fs.writeFileSync(path.join(eventPath, `schema.${schema.extension}`), schema.fileContent);
+      fs.writeFileSync(path.join(catalogDirectory, 'events', eventName, `schema.${schema.extension}`), schema.fileContent);
     }
 
     if (codeExamples.length > 0) {
-      fs.ensureDirSync(path.join(eventPath, 'examples'));
+      fs.ensureDirSync(path.join(catalogDirectory, 'events', eventName, 'examples'));
       codeExamples.forEach((codeExample) => {
-        fs.writeFileSync(path.join(eventPath, 'examples', codeExample.fileName), codeExample.fileContent);
+        fs.writeFileSync(
+          path.join(catalogDirectory, 'events', eventName, 'examples', codeExample.fileName),
+          codeExample.fileContent
+        );
       });
     }
 
     return {
-      path: path.join(eventPath),
+      path: path.join(catalogDirectory, 'events', eventName),
     };
   };
